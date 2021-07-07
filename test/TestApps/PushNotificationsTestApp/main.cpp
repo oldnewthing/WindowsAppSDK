@@ -61,6 +61,14 @@ bool ChannelRequestUsingRemoteId()
     return channelOperationResult == S_OK;
 }
 
+bool UnpackagedChannelRequestUsingRemoteId()
+{
+    auto channelOperation = PushNotificationManager::CreateChannelAsync(remoteId1);
+    auto channelOperationResult = ChannelRequestHelper(channelOperation);
+
+    return channelOperationResult == S_OK;
+}
+
 // Verify calling channel close will fail when called twice.
 bool MultipleChannelClose()
 {
@@ -261,6 +269,7 @@ std::map<std::string, bool(*)()> const& GetSwitchMapping()
     static std::map<std::string, bool(*)()> switchMapping = {
         { "ChannelRequestUsingNullRemoteId",  &ChannelRequestUsingNullRemoteId },
         { "ChannelRequestUsingRemoteId", &ChannelRequestUsingRemoteId },
+        { "UnpackagedChannelRequestUsingRemoteId", &UnpackagedChannelRequestUsingRemoteId },
         { "MultipleChannelClose", &MultipleChannelClose},
         { "MultipleChannelRequestUsingSameRemoteId", &MultipleChannelRequestUsingSameRemoteId},
         { "MultipleChannelRequestUsingMultipleRemoteId", &MultipleChannelRequestUsingMultipleRemoteId},
