@@ -17,6 +17,40 @@ using namespace winrt::Windows::Management::Deployment;
 using namespace winrt::Windows::Storage;
 using namespace winrt::Windows::System;
 
+#include <windows.h> 
+#include <MddBootstrap.h> 
+#include <winrt/Microsoft.Windows.AppLifecycle.h>
+#include <winrt/Microsoft.Windows.PushNotifications.h>
+using namespace winrt::Windows::Foundation;
+using namespace winrt::Microsoft::Windows::AppLifecycle;
+using namespace winrt::Microsoft::Windows::PushNotifications;
+
+winrt::guid remoteId1(L"a2e4a323-b518-4799-9e80-0b37aeb0d225"); // Generated from ms.portal.azure.com
+winrt::guid remoteId2(L"CA1A4AB2-AC1D-4EFC-A132-E5A191CA285A"); // Dummy guid from visual studio guid tool generator
+
+PushNotificationRegistrationToken g_appToken = nullptr;
+
+constexpr auto timeout{ std::chrono::seconds(300) };
+
+HRESULT ChannelRequestHelper(IAsyncOperationWithProgress<PushNotificationCreateChannelResult, PushNotificationCreateChannelStatus> const& channelOperation)
+{
+    if (channelOperation.wait_for(timeout) != winrt::Windows::Foundation::AsyncStatus::Completed)
+    {
+        channelOperation.Cancel();
+        return HRESULT_FROM_WIN32(ERROR_TIMEOUT); // timed out or failed
+    }
+
+    auto result = channelOperation.GetResults();
+    auto status = result.Status();
+    if (status != PushNotificationChannelStatus::CompletedSuccess)
+    {
+        return result.ExtendedError(); // did not produce a channel
+    }
+
+    result.Channel().Close();
+    return S_OK;
+}
+
 namespace Test::PushNotifications
 {
     class APITests
@@ -58,6 +92,7 @@ namespace Test::PushNotifications
             try
             {
                 TP::AddPackage_ProjectReunionFramework(); // Installs PRfwk
+                TP::AddPackage_DynamicDependencyLifetimeManager();
                 TP::WapProj::AddPackage(TAEF::GetDeploymentDir(), GetTestPackageFile(), L".msix"); // Installs PushNotificationsTestApp.msix
             }
             catch (...)
@@ -73,8 +108,9 @@ namespace Test::PushNotifications
         {
             try
             {
-                TP::RemovePackage_ProjectReunionFramework();
                 TP::RemovePackage(GetTestPackageFullName());
+                TP::RemovePackage_DynamicDependencyLifetimeManager();
+                TP::RemovePackage_ProjectReunionFramework();
             }
             catch (...)
             {
@@ -148,7 +184,51 @@ namespace Test::PushNotifications
 
         TEST_METHOD(UnpackagedChannelRequestUsingRemoteId)
         {
-            RunTest(L"UnpackagedChannelRequestUsingRemoteId", channelTestWaitTime());
+            PACKAGE_VERSION version{};
+            version.Major = 4;
+            version.Minor = 1;
+            version.Build = 1967;
+            version.Revision = 333;
+
+            const UINT32 majorMinorVersion = static_cast<UINT32>((version.Major << 16) | version.Minor);
+            //const UINT32 majorMinorVersion{ 0x00040001 };
+            //const UINT32 majorMinorVersion{ 0x00000008 };
+            PCWSTR versionTag{};
+            const PACKAGE_VERSION minVersion{};
+            const HRESULT hr{ MddBootstrapInitialize(majorMinorVersion, nullptr, minVersion) };
+
+            // Check the return code for errors. If there is an error, display the result.
+            if (FAILED(hr))
+            {
+                wprintf(L"Error 0x%X in MddBootstrapInitialize(0x%08X, %s, %hu.%hu.%hu.%hu)\n",
+                    hr, majorMinorVersion, versionTag, minVersion.Major, minVersion.Minor, minVersion.Build, minVersion.Revision);
+                //return hr;
+            }
+
+            //RunTest(L"BackgroundActivationTest", testWaitTime()); // Need to launch one time to enable background activation.
+
+            //auto LocalBackgroundTask = winrt::create_instance<winrt::Windows::ApplicationModel::Background::IBackgroundTask>(c_comServerId, CLSCTX_ALL);
+            //auto mockBackgroundTaskInstance = winrt::make<MockBackgroundTaskInstance>();
+            //VERIFY_NO_THROW(LocalBackgroundTask.Run(mockBackgroundTaskInstance));
+
+            //auto args = AppInstance::GetCurrent().GetActivatedEventArgs();
+            //auto kind = args.Kind();
+
+            //PushNotificationActivationInfo info(
+            //    PushNotificationRegistrationOptions::PushTrigger | PushNotificationRegistrationOptions::ComActivator,
+            //    winrt::guid(c_comServerId)); // same clsid as app manifest
+
+            //g_appToken = PushNotificationManager::RegisterActivator(info);
+
+            //RunTest(L"UnpackagedChannelRequestUsingRemoteId", channelTestWaitTime());
+            auto channelOperation = PushNotificationManager::CreateChannelAsync(remoteId1);
+            auto channelOperationResult = ChannelRequestHelper(channelOperation);
+
+            // Release the DDLM and clean up.
+            MddBootstrapShutdown();
+
+            //return channelOperationResult == S_OK;
+            VERIFY_ARE_EQUAL(channelOperationResult, S_OK);
         }
 
         TEST_METHOD(MultipleChannelClose)

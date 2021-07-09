@@ -45,5 +45,6 @@
   <ItemGroup>
     <CopyFileToFolders Include="$(TestPkgOutputFile)" />
     <CopyFileToFolders Include="$(TestPkgOutputPath)\Dependencies\$(PlatformTarget)\Microsoft.VCLibs.$(PlatformTarget)$(VCLibsDebugConfigName).14.00.appx" />
+    <CopyFileToFolders Include="$(TestPkgOutputFile)" />
   </ItemGroup>
 </Project>

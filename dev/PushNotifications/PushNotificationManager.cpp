@@ -67,7 +67,7 @@ namespace winrt::Microsoft::Windows::PushNotifications::implementation
         THROW_HR_IF(E_INVALIDARG, (remoteId == winrt::guid()));
 
         // API supports channel requests only for packaged applications for v0.8 version
-        THROW_HR_IF(E_NOTIMPL, !AppModel::Identity::IsPackagedProcess());
+//        THROW_HR_IF(E_NOTIMPL, !AppModel::Identity::IsPackagedProcess());
 
         auto cancellation{ co_await winrt::get_cancellation_token() };
 

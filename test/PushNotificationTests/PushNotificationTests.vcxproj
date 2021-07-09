@@ -169,9 +169,9 @@
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
-      <AdditionalLibraryDirectories>$(VCInstallDir)UnitTest\lib;%(AdditionalLibraryDirectories);$(OutDir)\..\ProjectReunion_DLL</AdditionalLibraryDirectories>
-      <AdditionalDependencies>onecore.lib;onecoreuap.lib;Microsoft.ProjectReunion.lib;wex.common.lib;wex.logger.lib;te.common.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <DelayLoadDLLs>Microsoft.ProjectReunion.Bootstrap.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
+      <AdditionalLibraryDirectories>$(VCInstallDir)UnitTest\lib;%(AdditionalLibraryDirectories);$(OutDir)\..\ProjectReunion_DLL;$(OutDir)\..\ProjectReunion_BootstrapDLL</AdditionalLibraryDirectories>
+      <AdditionalDependencies>onecore.lib;onecoreuap.lib;Microsoft.ProjectReunion.lib;wex.common.lib;wex.logger.lib;te.common.lib;Microsoft.ProjectReunion.Bootstrap.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <DelayLoadDLLs>Microsoft.ProjectReunion.Bootstrap.dll;Microsoft.ProjectReunion.dll;%(DelayLoadDLLs)</DelayLoadDLLs>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
@@ -265,6 +265,24 @@
   <ItemGroup>
     <CopyFileToFolders Include="$(TestPkgOutputFile)" DestinationFolders="$(TargetDir)" DestinationFileName="PushNotificationsTestAppPackage.msix" TreatOutputAsContent="true" />
     <CopyFileToFolders Include="$(TestPkgOutputPath)\Dependencies\$(PlatformTarget)\Microsoft.VCLibs.$(PlatformTarget)$(VCLibsDebugConfigName).14.00.appx" DestinationFolders="$(TargetDir)" DestinationFileName="VCLibs.appx" TreatOutputAsContent="true" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="Microsoft.Windows.AppLifecycle">
+      <HintPath>..\..\..\ProjectReunion\BuildOutput\Release\x64\ProjectReunion_DLL\Microsoft.Windows.AppLifecycle.winmd</HintPath>
+      <IsWinMDFile>true</IsWinMDFile>
+    </Reference>
+    <Reference Include="Microsoft.Windows.PushNotifications">
+      <HintPath>..\..\..\ProjectReunion\BuildOutput\Release\x64\ProjectReunion_DLL\Microsoft.Windows.PushNotifications.winmd</HintPath>
+      <IsWinMDFile>true</IsWinMDFile>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\dev\DynamicDependencyLifetimeManager\DynamicDependencyLifetimeManager\DynamicDependencyLifetimeManager.vcxproj">
+      <Project>{2e5bf0d2-78fa-4b60-a341-f65a0d58bd86}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\dev\ProjectReunion_BootstrapDLL\ProjectReunion_BootstrapDLL.vcxproj">
+      <Project>{f76b776e-86f5-48c5-8fc7-d2795ecc9746}</Project>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
