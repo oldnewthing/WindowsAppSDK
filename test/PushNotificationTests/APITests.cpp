@@ -93,6 +93,7 @@ namespace Test::PushNotifications
             {
                 TP::AddPackage_ProjectReunionFramework(); // Installs PRfwk
                 TP::AddPackage_DynamicDependencyLifetimeManager();
+                TP::AddPackage_PushNotificationsLongRunningTask(); // Installs the PushNotifications long running task.
                 TP::WapProj::AddPackage(TAEF::GetDeploymentDir(), GetTestPackageFile(), L".msix"); // Installs PushNotificationsTestApp.msix
             }
             catch (...)
@@ -109,6 +110,7 @@ namespace Test::PushNotifications
             try
             {
                 TP::RemovePackage(GetTestPackageFullName());
+                TP::RemovePackage_PushNotificationsLongRunningTask();
                 TP::RemovePackage_DynamicDependencyLifetimeManager();
                 TP::RemovePackage_ProjectReunionFramework();
             }
@@ -122,12 +124,14 @@ namespace Test::PushNotifications
         TEST_METHOD_SETUP(MethodInit)
         {
             VERIFY_IS_TRUE(TP::IsPackageRegistered_ProjectReunionFramework());
+            VERIFY_IS_TRUE(TP::IsPackageRegistered_PushNotificationsLongRunningTask());
             return true;
         }
 
         TEST_METHOD_CLEANUP(MethodUninit)
         {
             VERIFY_IS_TRUE(TP::IsPackageRegistered_ProjectReunionFramework());
+            VERIFY_IS_TRUE(TP::IsPackageRegistered_PushNotificationsLongRunningTask());
 
             m_processHandle.reset();
             return true;
