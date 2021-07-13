@@ -474,33 +474,31 @@ namespace winrt::Microsoft::ProjectReunion::factory_implementation
 {
 #endif
 
-    event_token PowerManager::AddCallback(PowerManagerEvent& e, PowerEventHandler const& handler)
+    event_token PowerManager::AddCallback(PowerManagerEventBase& e, PowerEventHandler const& handler)
     {
         std::scoped_lock<std::mutex> lock(m_mutex);
-        e.m_details.Register();
+        e.m_callback.Register();
         return e.m_event.add(handler);
     }
 
-    void PowerManager::RemoveCallback(PowerManagerEvent& e, event_token const& token)
+    void PowerManager::RemoveCallback(PowerManagerEventBase& e, event_token const& token)
     {
         e.m_event.remove(token);
         std::scoped_lock<std::mutex> lock(m_mutex);
-        if (!e.m_details.HasListeners())
-        {
-            e.m_details.Unregister();
-        }
+        e.m_callback.Unregister();
     }
 
     // Checks if an event is already registered. If none are, then gets the status
-    void PowerManager::UpdateValueIfNecessary(PowerManagerEvent& e)
+    void PowerManager::UpdateValueIfNecessary(PowerManagerEventBase& e)
     {
         std::scoped_lock<std::mutex> lock(m_mutex);
         if (!e.m_event)
         {
-            e.m_details.GetLatestValue();
+            e.m_callback.RefreshValue();
         }
     }
 
+#if 0
 #pragma region Energy Saver data
     struct PowerManagerEnergySaverData : PowerManagerDetailsBase
     {
@@ -713,5 +711,6 @@ namespace winrt::Microsoft::ProjectReunion::factory_implementation
     }
 
 #pragma endregion
+#endif
 
 }

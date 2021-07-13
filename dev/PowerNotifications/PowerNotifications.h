@@ -34,12 +34,12 @@ namespace winrt::Microsoft::ProjectReunion::factory_implementation
 
     struct PowerManagerEventBase
     {
-        PowerManagerEventBase(PowerCallbackBase const& callback) : m_callback(callback) {}
+        PowerManagerEventBase(PowerCallbackBase& callback) : m_callback(callback) {}
         fire_and_forget NotifyListeners();
         operator bool() const { return static_cast<bool>(m_event); }
 
         event<PowerEventHandler> m_event;
-        PowerCallbackBase const& m_callback;
+        PowerCallbackBase& m_callback;
     };
 
     template<typename TValue>
@@ -87,7 +87,7 @@ namespace winrt::Microsoft::ProjectReunion::factory_implementation
         Value GetLatestValue(PowerManagerEvent<Value>& powerEvent)
         {
             UpdateValueIfNecessary(powerEvent);
-            return powerEvent.m_value;
+            return powerEvent.Value();
         }
 
         template<auto Callback>
@@ -95,7 +95,7 @@ namespace winrt::Microsoft::ProjectReunion::factory_implementation
         {
             return [](auto value) -> void
             {
-                return (make_self<PowerManager>()->*Callback)(value);
+                return (make_self<PowerManager>().get()->*Callback)(value);
             };
         }
 
@@ -120,7 +120,7 @@ namespace winrt::Microsoft::ProjectReunion::factory_implementation
             unique_registration m_registration;
         };
 
-        EnergySaverPowerCallback m_energySaverPowerCallback;
+        EnergySaverPowerCallback m_energySaverPowerCallback{ this };
         void EnergySaver_Callback(::EnergySaverStatus status);
 
         PowerManagerEvent<ProjectReunion::EnergySaverStatus> m_energySaverStatusEvent{ m_energySaverPowerCallback };
@@ -155,7 +155,7 @@ namespace winrt::Microsoft::ProjectReunion::factory_implementation
             unique_registration m_registration;
         };
 
-        CompositeBatteryPowerCallback m_compositeBatteryPowerCallback;
+        CompositeBatteryPowerCallback m_compositeBatteryPowerCallback{ this };
         void CompositeBatteryStatusChanged_Callback(CompositeBatteryStatus* compositeBatteryStatus);
 
         PowerManagerEvent<ProjectReunion::BatteryStatus> m_batteryStatusEvent{ m_compositeBatteryPowerCallback };
@@ -182,7 +182,7 @@ namespace winrt::Microsoft::ProjectReunion::factory_implementation
             unique_registration m_registration;
         };
 
-        DischargeTimePowerCallback m_dischargeTimePowerCallback;
+        DischargeTimePowerCallback m_dischargeTimePowerCallback{ this };
         void DischargeTime_Callback(ULONGLONG dischargeTimeOut);
 
         PowerManagerEvent<Windows::Foundation::TimeSpan> m_remainingDischargeTimeEvent{ m_dischargeTimePowerCallback };
@@ -351,9 +351,9 @@ namespace winrt::Microsoft::ProjectReunion::factory_implementation
             RaiseEvent(systemAwayModeStatusFunc);
         }
 #endif
-
-
     };
+
+
 
 };
 
