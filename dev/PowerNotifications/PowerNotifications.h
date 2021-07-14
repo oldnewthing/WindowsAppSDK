@@ -22,20 +22,12 @@ namespace winrt::Microsoft::ProjectReunion::factory_implementation
     using PowerEventHandler =
         Windows::Foundation::EventHandler<winrt::Windows::Foundation::IInspectable>;
 
-    struct PowerCallbackBase
-    {
-        PowerCallbackBase(PowerManager* powerManager) : m_powerManager(powerManager) {}
-        virtual void Register() = 0;
-        virtual void Unregister() = 0;
-        virtual void RefreshValue() = 0;
-
-        PowerManager* m_powerManager;
-    };
+    struct PowerCallbackBase;
 
     struct PowerManagerEventBase
     {
         PowerManagerEventBase(PowerCallbackBase& callback) : m_callback(callback) {}
-        fire_and_forget NotifyListeners();
+        fire_and_forget NotifyListeners(PowerManager const* sender);
         operator bool() const { return static_cast<bool>(m_event); }
 
         event<PowerEventHandler> m_event;
@@ -47,13 +39,210 @@ namespace winrt::Microsoft::ProjectReunion::factory_implementation
     {
         using PowerManagerEventBase::PowerManagerEventBase;
         auto Value() const { return m_value; }
-        fire_and_forget UpdateValue(TValue value);
+        fire_and_forget UpdateValue(TValue value, PowerManager const* sender);
     private:
         TValue m_value;
     };
 
-    struct PowerManager : PowerManagerT<PowerManager, implementation::PowerManager, static_lifetime>
+    struct PowerCallbackBase
     {
+        virtual void Register() = 0;
+        virtual void Unregister() = 0;
+        virtual void RefreshValue() = 0;
+
+        event_token AddCallback(PowerManagerEventBase& powerEvent, PowerEventHandler const& handler);
+        void RemoveCallback(PowerManagerEventBase& powerEvent, event_token const& token);
+        void UpdateValueIfNecessary(PowerManagerEventBase& powerEvent);
+
+        template<typename Value>
+        Value GetLatestValue(PowerManagerEvent<Value>& powerEvent)
+        {
+            UpdateValueIfNecessary(powerEvent);
+            return powerEvent.Value();
+        }
+
+        template<auto Callback>
+        static auto MakeStaticCallback()
+        {
+            return [](auto... value) -> void
+            {
+                return (make_self<PowerManager>().get()->*Callback)(value...);
+            };
+        }
+
+    protected:
+        std::mutex m_mutex;
+    };
+
+    struct EnergySaverPowerCallback : PowerCallbackBase
+    {
+        void Register() override;
+        void Unregister() override;
+        void RefreshValue() override;
+        void UpdateValues(::EnergySaverStatus value);
+
+        void OnCallback(::EnergySaverStatus status);
+
+        using unique_registration = wil::unique_any<EnergySaverStatusRegistration, decltype(::UnregisterEnergySaverStatusChangedListener), ::UnregisterEnergySaverStatusChangedListener>;
+        unique_registration m_registration;
+
+        PowerManagerEvent<ProjectReunion::EnergySaverStatus> m_event{ *this };
+    };
+
+    struct CompositeBatteryPowerCallback : PowerCallbackBase
+    {
+        void Register() override;
+        void Unregister() override;
+        void RefreshValue() override;
+        void UpdateValues(CompositeBatteryStatus const& status);
+
+        void OnCallback(CompositeBatteryStatus* compositeBatteryStatus);
+
+        using unique_registration = wil::unique_any<CompositeBatteryStatusRegistration, decltype(::UnregisterCompositeBatteryStatusChangedListener), ::UnregisterCompositeBatteryStatusChangedListener>;
+        unique_registration m_registration;
+
+        PowerManagerEvent<ProjectReunion::BatteryStatus> m_batteryStatusEvent{ *this };
+        PowerManagerEvent<ProjectReunion::PowerSupplyStatus> m_powerSupplyStatusEvent{ *this };
+        PowerManagerEvent<int32_t> m_remainingChargePercentEvent{ *this };
+
+        static const auto UNKNOWN_BATTERY_PERCENT = 99999; // NEED TO CHOOSE AND DOCUMENT THIS VALUE
+    };
+
+    struct DischargeTimePowerCallback : PowerCallbackBase
+    {
+        void Register() override;
+        void Unregister() override;
+        void RefreshValue() override;
+        void UpdateValues(ULONGLONG value);
+
+        void OnCallback(ULONGLONG dischargeTimeOut);
+
+        using unique_registration = wil::unique_any<DischargeTimeRegistration, decltype(::UnregisterDischargeTimeChangedListener), ::UnregisterDischargeTimeChangedListener>;
+        unique_registration m_registration;
+
+        PowerManagerEvent<Windows::Foundation::TimeSpan> m_event{ *this };
+    };
+    
+    struct PowerSourcePowerCallback : PowerCallbackBase
+    {
+        void Register() override;
+        void Unregister() override;
+        void RefreshValue() override;
+        void UpdateValues(DWORD value);
+
+        void OnCallback(DWORD powerCondition);
+
+        using unique_registration = wil::unique_any<PowerConditionRegistration, decltype(::UnregisterPowerConditionChangedListener), ::UnregisterPowerConditionChangedListener>;
+        unique_registration m_registration;
+
+        PowerManagerEvent<ProjectReunion::PowerSourceStatus> m_event{ *this };
+    };
+
+    struct DisplayStatusPowerCallback : PowerCallbackBase
+    {
+        void Register() override;
+        void Unregister() override;
+        void RefreshValue() override;
+        void UpdateValues(DWORD value);
+
+        void OnCallback(DWORD displayStatus);
+
+        using unique_registration = wil::unique_any<DisplayStatusRegistration, decltype(::UnregisterDisplayStatusChangedListener), ::UnregisterDisplayStatusChangedListener>;
+        unique_registration m_registration;
+
+        PowerManagerEvent<ProjectReunion::DisplayStatus> m_event{ *this };
+    };
+
+    struct SystemIdleStatusPowerCallback : PowerCallbackBase
+    {
+        void Register() override;
+        void Unregister() override;
+        void RefreshValue() override;
+
+        void OnCallback();
+
+        using unique_registration = wil::unique_any<SystemIdleStatusRegistration, decltype(::UnregisterSystemIdleStatusChangedListener), ::UnregisterSystemIdleStatusChangedListener>;
+        unique_registration m_registration;
+
+        PowerManagerEvent<ProjectReunion::SystemIdleStatus> m_event{ *this };
+    };
+
+    struct PowerSchemePersonalityPowerCallback : PowerCallbackBase
+    {
+        void Register() override;
+        void Unregister() override;
+        void RefreshValue() override;
+        void UpdateValues(GUID const& value);
+
+        void OnCallback(GUID const& value);
+
+        using unique_registration = wil::unique_any<PowerSchemePersonalityRegistration, decltype(::UnregisterPowerSchemePersonalityChangedListener), ::UnregisterPowerSchemePersonalityChangedListener>;
+        unique_registration m_registration;
+
+        PowerManagerEvent<ProjectReunion::PowerSchemePersonality> m_event{ *this };
+    };
+
+    struct UserPresenceStatusPowerCallback : PowerCallbackBase
+    {
+        void Register() override;
+        void Unregister() override;
+        void RefreshValue() override;
+        void UpdateValues(DWORD value);
+
+        void OnCallback(DWORD value);
+
+        using unique_registration = wil::unique_any<UserPresenceStatusRegistration, decltype(::UnregisterUserPresenceStatusChangedListener), ::UnregisterUserPresenceStatusChangedListener>;
+        unique_registration m_registration;
+
+        PowerManagerEvent<ProjectReunion::UserPresenceStatus> m_event{ *this };
+    };
+
+    struct SystemAwayModeStatusPowerCallback : PowerCallbackBase
+    {
+        void Register() override;
+        void Unregister() override;
+        void RefreshValue() override;
+        void UpdateValues(DWORD value);
+
+        void OnCallback(DWORD value);
+
+        using unique_registration = wil::unique_any<SystemAwayModeStatusRegistration, decltype(::UnregisterSystemAwayModeStatusChangedListener), ::UnregisterSystemAwayModeStatusChangedListener>;
+        unique_registration m_registration;
+
+        PowerManagerEvent<ProjectReunion::SystemAwayModeStatus> m_event{ *this };
+    };
+
+    struct PowerManager : PowerManagerT<PowerManager, implementation::PowerManager, static_lifetime>,
+        EnergySaverPowerCallback,
+        CompositeBatteryPowerCallback,
+        DischargeTimePowerCallback,
+        PowerSourcePowerCallback,
+        DisplayStatusPowerCallback,
+        SystemIdleStatusPowerCallback,
+        PowerSchemePersonalityPowerCallback,
+        UserPresenceStatusPowerCallback,
+        SystemAwayModeStatusPowerCallback
+    {
+        ProjectReunion::EnergySaverStatus EnergySaverStatus();
+        event_token EnergySaverStatusChanged(PowerEventHandler const& handler);
+        void EnergySaverStatusChanged(event_token const& token);
+
+        ProjectReunion::BatteryStatus BatteryStatus();
+        event_token BatteryStatusChanged(PowerEventHandler const& handler);
+        void BatteryStatusChanged(event_token const& token);
+
+        ProjectReunion::PowerSupplyStatus PowerSupplyStatus();
+        event_token PowerSupplyStatusChanged(PowerEventHandler const& handler);
+        void PowerSupplyStatusChanged(event_token const& token);
+
+        int32_t RemainingChargePercent();
+        event_token RemainingChargePercentChanged(PowerEventHandler const& handler);
+        void RemainingChargePercentChanged(event_token const& token);
+
+        Windows::Foundation::TimeSpan RemainingDischargeTime();
+        event_token RemainingDischargeTimeChanged(PowerEventHandler const& handler);
+        void RemainingDischargeTimeChanged(event_token const& token);
+
         ProjectReunion::PowerSourceStatus PowerSourceStatus();
         event_token PowerSourceStatusChanged(PowerEventHandler const& handler);
         void PowerSourceStatusChanged(event_token const& token);
@@ -77,284 +266,7 @@ namespace winrt::Microsoft::ProjectReunion::factory_implementation
         ProjectReunion::SystemAwayModeStatus SystemAwayModeStatus();
         event_token SystemAwayModeStatusChanged(PowerEventHandler const& handler);
         void SystemAwayModeStatusChanged(event_token const& token);
-
-    private:
-        event_token AddCallback(PowerManagerEventBase& powerEvent, PowerEventHandler const& handler);
-        void RemoveCallback(PowerManagerEventBase& powerEvent, event_token const& token);
-        void UpdateValueIfNecessary(PowerManagerEventBase& powerEvent);
-
-        template<typename Value>
-        Value GetLatestValue(PowerManagerEvent<Value>& powerEvent)
-        {
-            UpdateValueIfNecessary(powerEvent);
-            return powerEvent.Value();
-        }
-
-        template<auto Callback>
-        static auto MakeStaticCallback()
-        {
-            return [](auto value) -> void
-            {
-                return (make_self<PowerManager>().get()->*Callback)(value);
-            };
-        }
-
-        std::mutex m_mutex;
-
-#pragma region Energy saver events
-    public:
-        ProjectReunion::EnergySaverStatus EnergySaverStatus();
-        event_token EnergySaverStatusChanged(PowerEventHandler const& handler);
-        void EnergySaverStatusChanged(event_token const& token);
-
-    private:
-        struct EnergySaverPowerCallback final : PowerCallbackBase
-        {
-            using PowerCallbackBase::PowerCallbackBase;
-            void Register() override;
-            void Unregister() override;
-            void RefreshValue() override;
-            void UpdateValues(::EnergySaverStatus value);
-
-            using unique_registration = wil::unique_any<EnergySaverStatusRegistration, decltype(::UnregisterEnergySaverStatusChangedListener), ::UnregisterEnergySaverStatusChangedListener>;
-            unique_registration m_registration;
-        };
-
-        EnergySaverPowerCallback m_energySaverPowerCallback{ this };
-        void EnergySaver_Callback(::EnergySaverStatus status);
-
-        PowerManagerEvent<ProjectReunion::EnergySaverStatus> m_energySaverStatusEvent{ m_energySaverPowerCallback };
-#pragma endregion
-
-#pragma region Composite battery events
-    public:
-        ProjectReunion::BatteryStatus BatteryStatus();
-        event_token BatteryStatusChanged(PowerEventHandler const& handler);
-        void BatteryStatusChanged(event_token const& token);
-
-        ProjectReunion::PowerSupplyStatus PowerSupplyStatus();
-        event_token PowerSupplyStatusChanged(PowerEventHandler const& handler);
-        void PowerSupplyStatusChanged(event_token const& token);
-
-        int32_t RemainingChargePercent();
-        event_token RemainingChargePercentChanged(PowerEventHandler const& handler);
-        void RemainingChargePercentChanged(event_token const& token);
-
-        static const auto UNKNOWN_BATTERY_PERCENT = 99999; // NEED TO CHOOSE AND DOCUMENT THIS VALUE
-
-    private:
-        struct CompositeBatteryPowerCallback final : PowerCallbackBase
-        {
-            using PowerCallbackBase::PowerCallbackBase;
-            void Register() override;
-            void Unregister() override;
-            void RefreshValue() override;
-            void UpdateValues(CompositeBatteryStatus const& status);
-
-            using unique_registration = wil::unique_any<CompositeBatteryStatusRegistration, decltype(::UnregisterCompositeBatteryStatusChangedListener), ::UnregisterCompositeBatteryStatusChangedListener>;
-            unique_registration m_registration;
-        };
-
-        CompositeBatteryPowerCallback m_compositeBatteryPowerCallback{ this };
-        void CompositeBatteryStatusChanged_Callback(CompositeBatteryStatus* compositeBatteryStatus);
-
-        PowerManagerEvent<ProjectReunion::BatteryStatus> m_batteryStatusEvent{ m_compositeBatteryPowerCallback };
-        PowerManagerEvent<ProjectReunion::PowerSupplyStatus> m_powerSupplyStatusEvent{ m_compositeBatteryPowerCallback };
-        PowerManagerEvent<int32_t> m_remainingChargePercentEvent{ m_compositeBatteryPowerCallback };
-#pragma endregion
-
-#pragma region Remaining discharge time events
-    public:
-        Windows::Foundation::TimeSpan RemainingDischargeTime();
-        event_token RemainingDischargeTimeChanged(PowerEventHandler const& handler);
-        void RemainingDischargeTimeChanged(event_token const& token);
-
-    private:
-        struct DischargeTimePowerCallback final : PowerCallbackBase
-        {
-            using PowerCallbackBase::PowerCallbackBase;
-            void Register() override;
-            void Unregister() override;
-            void RefreshValue() override;
-            void UpdateValues(ULONGLONG value);
-
-            using unique_registration = wil::unique_any<DischargeTimeRegistration, decltype(::UnregisterDischargeTimeChangedListener), ::UnregisterDischargeTimeChangedListener>;
-            unique_registration m_registration;
-        };
-
-        DischargeTimePowerCallback m_dischargeTimePowerCallback{ this };
-        void DischargeTime_Callback(ULONGLONG dischargeTimeOut);
-
-        PowerManagerEvent<Windows::Foundation::TimeSpan> m_remainingDischargeTimeEvent{ m_dischargeTimePowerCallback };
-#pragma endregion
-
-#if 0
-
-
-        // BatteryStatus
-
-
-        // PowerSourceStatus Functions
-        ProjectReunion::PowerSourceStatus PowerSourceStatus()
-        {
-            CheckRegistrationAndOrUpdateValue(powerSourceStatusFunc);
-            return static_cast<ProjectReunion::PowerSourceStatus>(m_cachedPowerSourceStatus);
-        }
-
-        event_token PowerSourceStatusChanged(PowerEventHandler const& handler)
-        {
-            return AddCallback(powerSourceStatusFunc, handler);
-        }
-
-        void PowerSourceStatusChanged(event_token const& token)
-        {
-            RemoveCallback(powerSourceStatusFunc, token);
-        }
-
-        void PowerSourceStatusChanged_Callback(DWORD powerCondition)
-        {
-            m_cachedPowerSourceStatus = powerCondition;
-            RaiseEvent(powerSourceStatusFunc);
-        }
-
-
-        // DisplayStatus Functions
-        ProjectReunion::DisplayStatus DisplayStatus()
-        {
-            CheckRegistrationAndOrUpdateValue(displayStatusFunc);
-            return static_cast<ProjectReunion::DisplayStatus>(m_cachedDisplayStatus);
-        }
-
-        event_token DisplayStatusChanged(PowerEventHandler const& handler)
-        {
-            return AddCallback(displayStatusFunc, handler);
-        }
-
-        void DisplayStatusChanged(event_token const& token)
-        {
-            RemoveCallback(displayStatusFunc, token);
-        }
-
-        void DisplayStatusChanged_Callback(DWORD displayStatus)
-        {
-            m_cachedDisplayStatus = displayStatus;
-            RaiseEvent(displayStatusFunc);
-        }
-
-
-        // SystemIdleStatus Functions
-        ProjectReunion::SystemIdleStatus SystemIdleStatus()
-        {
-            // PReview: Should this be the default value?
-            // We expect a persistently-queryable value, but
-            // low-level APIs provide an idle->non-idle pulse event
- 
-            return SystemIdleStatus::Busy;
-        }
-
-        event_token SystemIdleStatusChanged(PowerEventHandler const& handler)
-        {
-            return AddCallback(systemIdleStatusFunc, handler);
-        }
-
-        void SystemIdleStatusChanged(event_token const& token)
-        {
-            RemoveCallback(systemIdleStatusFunc, token);
-        }
-
-        void SystemIdleStatusChanged_Callback()
-        {
-            RaiseEvent(systemIdleStatusFunc);
-        }
-
-
-        // PowerSchemePersonality Functions
-        ProjectReunion::PowerSchemePersonality PowerSchemePersonality()
-        {
-            CheckRegistrationAndOrUpdateValue(powerSchemePersonalityFunc);
-            if (m_cachedPowerSchemePersonality == GUID_MAX_POWER_SAVINGS)
-            {
-                return PowerSchemePersonality::PowerSaver;
-            }
-            else if (m_cachedPowerSchemePersonality == GUID_MIN_POWER_SAVINGS)
-            {
-                return PowerSchemePersonality::HighPerformance;
-            }
-            else
-            {
-                return PowerSchemePersonality::Balanced;
-            }
-
-        }
-
-        event_token PowerSchemePersonalityChanged(PowerEventHandler const& handler)
-        {
-            return AddCallback(powerSchemePersonalityFunc, handler);
-        }
-
-        void PowerSchemePersonalityChanged(event_token const& token)
-        {
-            RemoveCallback(powerSchemePersonalityFunc, token);
-        }
-
-        void PowerSchemePersonalityChanged_Callback(GUID powerSchemePersonality)
-        {
-            m_cachedPowerSchemePersonality = powerSchemePersonality;
-            RaiseEvent(powerSchemePersonalityFunc);
-        }
-
-
-        // UserPresenceStatus Functions
-        ProjectReunion::UserPresenceStatus UserPresenceStatus()
-        {
-            CheckRegistrationAndOrUpdateValue(userPresenceStatusFunc);
-            return static_cast<ProjectReunion::UserPresenceStatus>(m_cachedUserPresenceStatus);
-        }
-
-        event_token UserPresenceStatusChanged(PowerEventHandler const& handler)
-        {
-            return AddCallback(userPresenceStatusFunc, handler);
-        }
-
-        void UserPresenceStatusChanged(event_token const& token)
-        {
-            RemoveCallback(userPresenceStatusFunc, token);
-        }
-
-        void UserPresenceStatusChanged_Callback(DWORD userPresenceStatus)
-        {
-            m_cachedUserPresenceStatus = userPresenceStatus;
-            RaiseEvent(userPresenceStatusFunc);
-        }
-
-
-        // SystemAwayModeStatus Functions
-        ProjectReunion::SystemAwayModeStatus SystemAwayModeStatus()
-        {
-            CheckRegistrationAndOrUpdateValue(systemAwayModeStatusFunc);
-            return static_cast<ProjectReunion::SystemAwayModeStatus>(m_cachedSystemAwayModeStatus);
-        }
-
-        event_token SystemAwayModeStatusChanged(PowerEventHandler const& handler)
-        {
-            return AddCallback(systemAwayModeStatusFunc, handler);
-        }
-
-        void SystemAwayModeStatusChanged(event_token const& token)
-        {
-            RemoveCallback(systemAwayModeStatusFunc, token);
-        }
-
-        void SystemAwayModeStatusChanged_Callback(DWORD systemAwayModeStatus)
-        {
-            m_cachedSystemAwayModeStatus = systemAwayModeStatus;
-            RaiseEvent(systemAwayModeStatusFunc);
-        }
-#endif
     };
-
-
-
 };
 
 namespace winrt::Microsoft::ProjectReunion::implementation
