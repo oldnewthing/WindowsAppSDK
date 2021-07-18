@@ -7,7 +7,8 @@
 
 namespace winrt::Microsoft::ProjectReunion::factory_implementation
 {
-    fire_and_forget PowerManagerEventBase::NotifyListeners(PowerManager const* sender)
+    template<typename Parent, typename TValue>
+    fire_and_forget PowerManagerEvent<Parent, TValue>::NotifyListeners(PowerManager const* sender)
     {
         if (sender && m_event)
         {
@@ -17,74 +18,23 @@ namespace winrt::Microsoft::ProjectReunion::factory_implementation
         }
     }
 
-    template<typename TValue>
-    fire_and_forget PowerManagerEvent<TValue>::UpdateValue(TValue value, PowerManager const* sender)
+    template<typename Parent, typename TValue>
+    fire_and_forget PowerManagerEvent<Parent, TValue>::UpdateValue(TValue value, PowerManager const* sender)
     {
         if (m_value != value)
         {
             m_value = value;
-            NotifyListeners(sender);
+            this->NotifyListeners(sender);
         }
     };
 
-    event_token PowerCallbackBase::AddCallback(PowerManagerEventBase& e, PowerEventHandler const& handler)
-    {
-        std::scoped_lock<std::mutex> lock(m_mutex);
-        e.m_callback.Register();
-        return e.m_event.add(handler);
-    }
-
-    void PowerCallbackBase::RemoveCallback(PowerManagerEventBase& e, event_token const& token)
-    {
-        e.m_event.remove(token);
-        std::scoped_lock<std::mutex> lock(m_mutex);
-        e.m_callback.Unregister();
-    }
-
-    // Checks if an event is already registered. If none are, then gets the status
-    void PowerCallbackBase::UpdateValueIfNecessary(PowerManagerEventBase& e)
-    {
-        std::scoped_lock<std::mutex> lock(m_mutex);
-        if (!e.m_event)
-        {
-            e.m_callback.RefreshValue();
-        }
-    }
-
 #pragma region Energy Saver
-    ProjectReunion::EnergySaverStatus PowerManager::EnergySaverStatus()
-    {
-        return EnergySaverPowerCallback::GetLatestValue(EnergySaverPowerCallback::m_event);
-    }
-
-    event_token PowerManager::EnergySaverStatusChanged(PowerEventHandler const& handler)
-    {
-        return EnergySaverPowerCallback::AddCallback(EnergySaverPowerCallback::m_event, handler);
-    }
-
-    void PowerManager::EnergySaverStatusChanged(event_token const& token)
-    {
-        EnergySaverPowerCallback::RemoveCallback(EnergySaverPowerCallback::m_event, token);
-    }
-
     void EnergySaverPowerCallback::Register()
     {
-        if (!m_registration)
-        {
-            RefreshValue();
-            check_hresult(RegisterEnergySaverStatusChangedListener(PowerManager::MakeStaticCallback<&EnergySaverPowerCallback::OnCallback>(), &m_registration));
-        }
+        check_hresult(RegisterEnergySaverStatusChangedListener(MakeStaticCallback<&EnergySaverPowerCallback::OnCallback>(), &m_registration));
     }
 
-    void EnergySaverPowerCallback::Unregister()
-    {
-        if (!m_event)
-        {
-            m_registration.reset();
-        }
-    }
-
-    void EnergySaverPowerCallback::RefreshValue()
+    void EnergySaverPowerCallback::RefreshValues()
     {
         ::EnergySaverStatus status;
         check_hresult(::GetEnergySaverStatus(&status));
@@ -93,83 +43,23 @@ namespace winrt::Microsoft::ProjectReunion::factory_implementation
 
     void EnergySaverPowerCallback::OnCallback(::EnergySaverStatus status)
     {
-        std::scoped_lock<std::mutex> lock(m_mutex);
+        auto lock = LockExclusive();
         UpdateValues(status);
     }
 
     void EnergySaverPowerCallback::UpdateValues(::EnergySaverStatus status)
     {
-        m_event.UpdateValue(static_cast<ProjectReunion::EnergySaverStatus>(status), static_cast<PowerManager*>(this));
+        m_event.UpdateValue(static_cast<ProjectReunion::EnergySaverStatus>(status), Manager());
     }
 #pragma endregion
 
 #pragma region Composite battery events
-#pragma region public APIs
-    ProjectReunion::BatteryStatus PowerManager::BatteryStatus()
-    {
-        return CompositeBatteryPowerCallback::GetLatestValue(CompositeBatteryPowerCallback::m_batteryStatusEvent);
-    }
-
-    event_token PowerManager::BatteryStatusChanged(PowerEventHandler const& handler)
-    {
-        return CompositeBatteryPowerCallback::AddCallback(CompositeBatteryPowerCallback::m_batteryStatusEvent, handler);
-    }
-
-    void PowerManager::BatteryStatusChanged(event_token const& token)
-    {
-        return CompositeBatteryPowerCallback::RemoveCallback(CompositeBatteryPowerCallback::m_batteryStatusEvent, token);
-    }
-
-    ProjectReunion::PowerSupplyStatus PowerManager::PowerSupplyStatus()
-    {
-        return CompositeBatteryPowerCallback::GetLatestValue(CompositeBatteryPowerCallback::m_powerSupplyStatusEvent);
-    }
-
-    event_token PowerManager::PowerSupplyStatusChanged(PowerEventHandler const& handler)
-    {
-        return CompositeBatteryPowerCallback::AddCallback(CompositeBatteryPowerCallback::m_powerSupplyStatusEvent, handler);
-    }
-
-    void PowerManager::PowerSupplyStatusChanged(event_token const& token)
-    {
-        return CompositeBatteryPowerCallback::RemoveCallback(CompositeBatteryPowerCallback::m_powerSupplyStatusEvent, token);
-    }
-
-    int32_t PowerManager::RemainingChargePercent()
-    {
-        return CompositeBatteryPowerCallback::GetLatestValue(CompositeBatteryPowerCallback::m_remainingChargePercentEvent);
-    }
-
-    event_token PowerManager::RemainingChargePercentChanged(PowerEventHandler const& handler)
-    {
-        return CompositeBatteryPowerCallback::AddCallback(CompositeBatteryPowerCallback::m_remainingChargePercentEvent, handler);
-    }
-
-    void PowerManager::RemainingChargePercentChanged(event_token const& token)
-    {
-        return CompositeBatteryPowerCallback::RemoveCallback(CompositeBatteryPowerCallback::m_remainingChargePercentEvent, token);
-    }
-#pragma endregion public APIs
-
     void CompositeBatteryPowerCallback::Register()
     {
-        if (!m_registration)
-        {
-            RefreshValue();
-            check_hresult(RegisterCompositeBatteryStatusChangedListener(PowerManager::MakeStaticCallback<&CompositeBatteryPowerCallback::OnCallback>(), &m_registration));
-        }
+            check_hresult(RegisterCompositeBatteryStatusChangedListener(MakeStaticCallback<&CompositeBatteryPowerCallback::OnCallback>(), &m_registration));
     }
 
-    void CompositeBatteryPowerCallback::Unregister()
-    {
-        bool isCallbackNeeded = m_batteryStatusEvent || m_powerSupplyStatusEvent || m_remainingChargePercentEvent;
-        if (!isCallbackNeeded)
-        {
-            m_registration.reset();
-        }
-    }
-
-    void CompositeBatteryPowerCallback::RefreshValue()
+    void CompositeBatteryPowerCallback::RefreshValues()
     {
         CompositeBatteryStatus* compositeBatteryStatus;
         check_hresult(GetCompositeBatteryStatus(&compositeBatteryStatus));
@@ -179,7 +69,7 @@ namespace winrt::Microsoft::ProjectReunion::factory_implementation
 
     void CompositeBatteryPowerCallback::OnCallback(CompositeBatteryStatus* compositeBatteryStatus)
     {
-        std::scoped_lock<std::mutex> lock(m_mutex);
+        auto lock = LockExclusive();
         UpdateValues(*compositeBatteryStatus);
     }
 
@@ -252,48 +142,19 @@ namespace winrt::Microsoft::ProjectReunion::factory_implementation
 
     void CompositeBatteryPowerCallback::UpdateValues(CompositeBatteryStatus const& compositeBatteryStatus)
     {
-        m_remainingChargePercentEvent.UpdateValue(GetBatteryChargePercent(compositeBatteryStatus), static_cast<PowerManager*>(this));
-        m_batteryStatusEvent.UpdateValue(GetBatteryStatus(compositeBatteryStatus), static_cast<PowerManager*>(this));
-        m_powerSupplyStatusEvent.UpdateValue(GetPowerSupplyStatus(compositeBatteryStatus), static_cast<PowerManager*>(this));
+        m_remainingChargePercentEvent.UpdateValue(GetBatteryChargePercent(compositeBatteryStatus), Manager());
+        m_batteryStatusEvent.UpdateValue(GetBatteryStatus(compositeBatteryStatus), Manager());
+        m_powerSupplyStatusEvent.UpdateValue(GetPowerSupplyStatus(compositeBatteryStatus), Manager());
     }
 #pragma endregion
 
 #pragma region Remaining discharge time
-
-    Windows::Foundation::TimeSpan PowerManager::RemainingDischargeTime()
-    {
-        return DischargeTimePowerCallback::GetLatestValue(DischargeTimePowerCallback::m_event);
-    }
-
-    event_token PowerManager::RemainingDischargeTimeChanged(PowerEventHandler const& handler)
-    {
-        return DischargeTimePowerCallback::AddCallback(DischargeTimePowerCallback::m_event, handler);
-    }
-
-    void PowerManager::RemainingDischargeTimeChanged(event_token const& token)
-    {
-        DischargeTimePowerCallback::RemoveCallback(DischargeTimePowerCallback::m_event, token);
-    }
-
-
     void DischargeTimePowerCallback::Register()
     {
-        if (!m_registration)
-        {
-            RefreshValue();
-            check_hresult(RegisterDischargeTimeChangedListener(PowerManager::MakeStaticCallback<&DischargeTimePowerCallback::OnCallback>(), &m_registration));
-        }
+        check_hresult(RegisterDischargeTimeChangedListener(MakeStaticCallback<&DischargeTimePowerCallback::OnCallback>(), &m_registration));
     }
 
-    void DischargeTimePowerCallback::Unregister()
-    {
-        if (!m_event)
-        {
-            m_registration.reset();
-        }
-    }
-
-    void DischargeTimePowerCallback::RefreshValue()
+    void DischargeTimePowerCallback::RefreshValues()
     {
         ULONGLONG dischargeTime;
         check_hresult(GetDischargeTime(&dischargeTime));
@@ -302,50 +163,23 @@ namespace winrt::Microsoft::ProjectReunion::factory_implementation
 
     void DischargeTimePowerCallback::OnCallback(ULONGLONG dischargeTime)
     {
-        std::scoped_lock<std::mutex> lock(m_mutex);
+        auto lock = LockExclusive();
         UpdateValues(dischargeTime);
     }
 
     void DischargeTimePowerCallback::UpdateValues(ULONGLONG dischargeTime)
     {
-        m_event.UpdateValue(std::chrono::seconds(dischargeTime), static_cast<PowerManager*>(this));
+        m_event.UpdateValue(std::chrono::seconds(dischargeTime), Manager());
     }
 #pragma endregion
 
 #pragma region Power source
-    ProjectReunion::PowerSourceStatus PowerManager::PowerSourceStatus()
-    {
-        return PowerSourcePowerCallback::GetLatestValue(PowerSourcePowerCallback::m_event);
-    }
-
-    event_token PowerManager::PowerSourceStatusChanged(PowerEventHandler const& handler)
-    {
-        return PowerSourcePowerCallback::AddCallback(PowerSourcePowerCallback::m_event, handler);
-    }
-
-    void PowerManager::PowerSourceStatusChanged(event_token const& token)
-    {
-        PowerSourcePowerCallback::RemoveCallback(PowerSourcePowerCallback::m_event, token);
-    }
-
     void PowerSourcePowerCallback::Register()
     {
-        if (!m_registration)
-        {
-            RefreshValue();
-            check_hresult(RegisterPowerConditionChangedListener(PowerManager::MakeStaticCallback<&PowerSourcePowerCallback::OnCallback>(), &m_registration));
-        }
+        check_hresult(RegisterPowerConditionChangedListener(MakeStaticCallback<&PowerSourcePowerCallback::OnCallback>(), &m_registration));
     }
 
-    void PowerSourcePowerCallback::Unregister()
-    {
-        if (!m_event)
-        {
-            m_registration.reset();
-        }
-    }
-
-    void PowerSourcePowerCallback::RefreshValue()
+    void PowerSourcePowerCallback::RefreshValues()
     {
         DWORD value;
         check_hresult(::GetPowerCondition(&value));
@@ -354,50 +188,23 @@ namespace winrt::Microsoft::ProjectReunion::factory_implementation
 
     void PowerSourcePowerCallback::OnCallback(DWORD value)
     {
-        std::scoped_lock<std::mutex> lock(m_mutex);
+        auto lock = LockExclusive();
         UpdateValues(value);
     }
 
     void PowerSourcePowerCallback::UpdateValues(DWORD value)
     {
-        m_event.UpdateValue(static_cast<ProjectReunion::PowerSourceStatus>(value), static_cast<PowerManager*>(this));
+        m_event.UpdateValue(static_cast<ProjectReunion::PowerSourceStatus>(value), Manager());
     }
 #pragma endregion
 
 #pragma region Display status
-    ProjectReunion::DisplayStatus PowerManager::DisplayStatus()
-    {
-        return DisplayStatusPowerCallback::GetLatestValue(DisplayStatusPowerCallback::m_event);
-    }
-
-    event_token PowerManager::DisplayStatusChanged(PowerEventHandler const& handler)
-    {
-        return DisplayStatusPowerCallback::AddCallback(DisplayStatusPowerCallback::m_event, handler);
-    }
-
-    void PowerManager::DisplayStatusChanged(event_token const& token)
-    {
-        DisplayStatusPowerCallback::RemoveCallback(DisplayStatusPowerCallback::m_event, token);
-    }
-
     void DisplayStatusPowerCallback::Register()
     {
-        if (!m_registration)
-        {
-            RefreshValue();
-            check_hresult(RegisterDisplayStatusChangedListener(PowerManager::MakeStaticCallback<&DisplayStatusPowerCallback::OnCallback>(), &m_registration));
-        }
+        check_hresult(RegisterDisplayStatusChangedListener(MakeStaticCallback<&DisplayStatusPowerCallback::OnCallback>(), &m_registration));
     }
 
-    void DisplayStatusPowerCallback::Unregister()
-    {
-        if (!m_event)
-        {
-            m_registration.reset();
-        }
-    }
-
-    void DisplayStatusPowerCallback::RefreshValue()
+    void DisplayStatusPowerCallback::RefreshValues()
     {
         DWORD value;
         check_hresult(::GetDisplayStatus(&value));
@@ -406,99 +213,45 @@ namespace winrt::Microsoft::ProjectReunion::factory_implementation
 
     void DisplayStatusPowerCallback::OnCallback(DWORD value)
     {
-        std::scoped_lock<std::mutex> lock(m_mutex);
+        auto lock = LockExclusive();
         UpdateValues(value);
     }
 
     void DisplayStatusPowerCallback::UpdateValues(DWORD value)
     {
-        m_event.UpdateValue(static_cast<ProjectReunion::DisplayStatus>(value), static_cast<PowerManager*>(this));
+        m_event.UpdateValue(static_cast<ProjectReunion::DisplayStatus>(value), Manager());
     }
 #pragma endregion
 
 #pragma region System idle status
-    ProjectReunion::SystemIdleStatus PowerManager::SystemIdleStatus()
+    void SystemIdleStatusPowerCallback::Register()
     {
+        check_hresult(RegisterSystemIdleStatusChangedListener(MakeStaticCallback<&SystemIdleStatusPowerCallback::OnCallback>(), &m_registration));
+    }
+
+    void SystemIdleStatusPowerCallback::RefreshValues()
+    {
+        // There is no way to query the value.
         // PReview: Should this be the default value?
         // We expect a persistently-queryable value, but
         // low-level APIs provide an idle->non-idle pulse event
-
-        return SystemIdleStatus::Busy;
-    }
-
-    event_token PowerManager::SystemIdleStatusChanged(PowerEventHandler const& handler)
-    {
-        return SystemIdleStatusPowerCallback::AddCallback(SystemIdleStatusPowerCallback::m_event, handler);
-    }
-
-    void PowerManager::SystemIdleStatusChanged(event_token const& token)
-    {
-        SystemIdleStatusPowerCallback::RemoveCallback(SystemIdleStatusPowerCallback::m_event, token);
-    }
-
-    void SystemIdleStatusPowerCallback::Register()
-    {
-        if (!m_registration)
-        {
-            RefreshValue();
-            check_hresult(RegisterSystemIdleStatusChangedListener(PowerManager::MakeStaticCallback<&SystemIdleStatusPowerCallback::OnCallback>(), &m_registration));
-        }
-    }
-
-    void SystemIdleStatusPowerCallback::Unregister()
-    {
-        if (!m_event)
-        {
-            m_registration.reset();
-        }
-    }
-
-    void SystemIdleStatusPowerCallback::RefreshValue()
-    {
-        // There is no way to query the value.
+        m_event.UpdateValue(SystemIdleStatus::Busy, Manager());
     }
 
     void SystemIdleStatusPowerCallback::OnCallback()
     {
-        std::scoped_lock<std::mutex> lock(m_mutex);
-        m_event.NotifyListeners(static_cast<PowerManager*>(this));
+        auto lock = LockExclusive();
+        m_event.NotifyListeners(Manager());
     }
 #pragma endregion
 
 #pragma region Power scheme personality
-    ProjectReunion::PowerSchemePersonality PowerManager::PowerSchemePersonality()
-    {
-        return PowerSchemePersonalityPowerCallback::GetLatestValue(PowerSchemePersonalityPowerCallback::m_event);
-    }
-
-    event_token PowerManager::PowerSchemePersonalityChanged(PowerEventHandler const& handler)
-    {
-        return PowerSchemePersonalityPowerCallback::AddCallback(PowerSchemePersonalityPowerCallback::m_event, handler);
-    }
-
-    void PowerManager::PowerSchemePersonalityChanged(event_token const& token)
-    {
-        PowerSchemePersonalityPowerCallback::RemoveCallback(PowerSchemePersonalityPowerCallback::m_event, token);
-    }
-
     void PowerSchemePersonalityPowerCallback::Register()
     {
-        if (!m_registration)
-        {
-            RefreshValue();
-            check_hresult(RegisterPowerSchemePersonalityChangedListener(PowerManager::MakeStaticCallback<&PowerSchemePersonalityPowerCallback::OnCallback>(), &m_registration));
-        }
+        check_hresult(RegisterPowerSchemePersonalityChangedListener(MakeStaticCallback<&PowerSchemePersonalityPowerCallback::OnCallback>(), &m_registration));
     }
 
-    void PowerSchemePersonalityPowerCallback::Unregister()
-    {
-        if (!m_event)
-        {
-            m_registration.reset();
-        }
-    }
-
-    void PowerSchemePersonalityPowerCallback::RefreshValue()
+    void PowerSchemePersonalityPowerCallback::RefreshValues()
     {
         GUID value;
         check_hresult(::GetPowerSchemePersonality(&value));
@@ -507,7 +260,7 @@ namespace winrt::Microsoft::ProjectReunion::factory_implementation
 
     void PowerSchemePersonalityPowerCallback::OnCallback(GUID const& value)
     {
-        std::scoped_lock<std::mutex> lock(m_mutex);
+        auto lock = LockExclusive();
         UpdateValues(value);
     }
 
@@ -526,45 +279,18 @@ namespace winrt::Microsoft::ProjectReunion::factory_implementation
         {
             personality = PowerSchemePersonality::Balanced;
         }
-        m_event.UpdateValue(personality, static_cast<PowerManager*>(this));
+        m_event.UpdateValue(personality, Manager());
     }
 
 #pragma endregion
 
 #pragma region User presence status
-    ProjectReunion::UserPresenceStatus PowerManager::UserPresenceStatus()
-    {
-        return UserPresenceStatusPowerCallback::GetLatestValue(UserPresenceStatusPowerCallback::m_event);
-    }
-
-    event_token PowerManager::UserPresenceStatusChanged(PowerEventHandler const& handler)
-    {
-        return UserPresenceStatusPowerCallback::AddCallback(UserPresenceStatusPowerCallback::m_event, handler);
-    }
-
-    void PowerManager::UserPresenceStatusChanged(event_token const& token)
-    {
-        UserPresenceStatusPowerCallback::RemoveCallback(UserPresenceStatusPowerCallback::m_event, token);
-    }
-
     void UserPresenceStatusPowerCallback::Register()
     {
-        if (!m_registration)
-        {
-            RefreshValue();
-            check_hresult(RegisterUserPresenceStatusChangedListener(PowerManager::MakeStaticCallback<&UserPresenceStatusPowerCallback::OnCallback>(), &m_registration));
-        }
+        check_hresult(RegisterUserPresenceStatusChangedListener(MakeStaticCallback<&UserPresenceStatusPowerCallback::OnCallback>(), &m_registration));
     }
 
-    void UserPresenceStatusPowerCallback::Unregister()
-    {
-        if (!m_event)
-        {
-            m_registration.reset();
-        }
-    }
-
-    void UserPresenceStatusPowerCallback::RefreshValue()
+    void UserPresenceStatusPowerCallback::RefreshValues()
     {
         DWORD value;
         check_hresult(::GetUserPresenceStatus(&value));
@@ -573,51 +299,24 @@ namespace winrt::Microsoft::ProjectReunion::factory_implementation
 
     void UserPresenceStatusPowerCallback::OnCallback(DWORD value)
     {
-        std::scoped_lock<std::mutex> lock(m_mutex);
+        auto lock = LockExclusive();
         UpdateValues(value);
     }
 
     void UserPresenceStatusPowerCallback::UpdateValues(DWORD value)
     {
-        m_event.UpdateValue(static_cast<ProjectReunion::UserPresenceStatus>(value), static_cast<PowerManager*>(this));
+        m_event.UpdateValue(static_cast<ProjectReunion::UserPresenceStatus>(value), Manager());
     }
 
 #pragma endregion
 
 #pragma region System away mode status
-    ProjectReunion::SystemAwayModeStatus PowerManager::SystemAwayModeStatus()
-    {
-        return SystemAwayModeStatusPowerCallback::GetLatestValue(SystemAwayModeStatusPowerCallback::m_event);
-    }
-
-    event_token PowerManager::SystemAwayModeStatusChanged(PowerEventHandler const& handler)
-    {
-        return SystemAwayModeStatusPowerCallback::AddCallback(SystemAwayModeStatusPowerCallback::m_event, handler);
-    }
-
-    void PowerManager::SystemAwayModeStatusChanged(event_token const& token)
-    {
-        SystemAwayModeStatusPowerCallback::RemoveCallback(SystemAwayModeStatusPowerCallback::m_event, token);
-    }
-
     void SystemAwayModeStatusPowerCallback::Register()
     {
-        if (!m_registration)
-        {
-            RefreshValue();
-            check_hresult(RegisterSystemAwayModeStatusChangedListener(PowerManager::MakeStaticCallback<&SystemAwayModeStatusPowerCallback::OnCallback>(), &m_registration));
-        }
+        check_hresult(RegisterSystemAwayModeStatusChangedListener(MakeStaticCallback<&SystemAwayModeStatusPowerCallback::OnCallback>(), &m_registration));
     }
 
-    void SystemAwayModeStatusPowerCallback::Unregister()
-    {
-        if (!m_event)
-        {
-            m_registration.reset();
-        }
-    }
-
-    void SystemAwayModeStatusPowerCallback::RefreshValue()
+    void SystemAwayModeStatusPowerCallback::RefreshValues()
     {
         DWORD value;
         check_hresult(::GetSystemAwayModeStatus(&value));
@@ -626,15 +325,14 @@ namespace winrt::Microsoft::ProjectReunion::factory_implementation
 
     void SystemAwayModeStatusPowerCallback::OnCallback(DWORD value)
     {
-        std::scoped_lock<std::mutex> lock(m_mutex);
+        auto lock = LockExclusive();
         UpdateValues(value);
     }
 
     void SystemAwayModeStatusPowerCallback::UpdateValues(DWORD value)
     {
-        m_event.UpdateValue(static_cast<ProjectReunion::SystemAwayModeStatus>(value), static_cast<PowerManager*>(this));
+        m_event.UpdateValue(static_cast<ProjectReunion::SystemAwayModeStatus>(value), Manager());
     }
-
 #pragma endregion
 
 }
